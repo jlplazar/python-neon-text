@@ -1,8 +1,7 @@
 # python-neon-text
 Python script that generates an image with the given text, with a neon glow effect
 
-Examples:
----------
+## Examples
 
 python neon.py -t 'Happy New Year!' -f img/happy_new_year.png
 
@@ -13,8 +12,7 @@ python neon.py -t "This looks like Frozen" -f img/frozen_message.png --shadow 0E
 ![Frozen message](./img/frozen_message.png)
 
 
-Dependencies:
--------------
+## Dependencies
 
-- [PyCairo](https://cairographics.org/pycairo/)
-- [Pillow](https://pillow.readthedocs.io/en/5.1.x/index.html#pillow)
+* [PyCairo](https://cairographics.org/pycairo/)
+* [Pillow](https://pillow.readthedocs.io/en/5.1.x/index.html#pillow)
