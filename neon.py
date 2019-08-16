@@ -1,91 +1,145 @@
 #!/usr/bin/env python3
 
 import argparse
+import array
 import cairo
 from PIL import ImageFilter, Image
 from tools import transform_color
 
-MIN_FONT_SIZE = 20
-MAX_FONT_SIZE = 300
-MAX_PADDING = 120
-MIN_SHADOW = 20
-FONT = "Zapfino"
 
-BG_COLOR = '000000'
-SHADOW_COLOR = 'ec0e77' #(0.929, 0.055, 0.467)
-FG_COLOR_1 = 'ff31f4' #(1, 0.196, 0.957)
-FG_COLOR_2 = 'ffd796' #(1, 0.847, 0.592)
-FILL_COLOR = 'FFFFFF'
+class NeonGlowText:
+    """Neon glow text"""
+    
+    MIN_FONT_SIZE = 20
+    MAX_FONT_SIZE = 300
+    MAX_PADDING   = 120
+    MIN_SHADOW    = 20
+    FONT          = "Zapfino"
 
-def _initialize(cr, width, height, text):
-    cr.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+    BG_COLOR   = '000000'
+    GLOW_COLOR = 'ec0e77' #(0.929, 0.055, 0.467)
+    FG_COLOR_1 = 'ff31f4' #(1, 0.196, 0.957)
+    FG_COLOR_2 = 'ffd796' #(1, 0.847, 0.592)
+    FILL_COLOR = 'FFFFFF'
 
-    font_size = MAX_FONT_SIZE
-    cr.set_font_size(font_size)
-    x_bearing, y_bearing, t_width, t_height, _, _ = cr.text_extents(text)
-    while (t_width > width - min(MAX_PADDING, font_size) or
-           t_height > height - min(MAX_PADDING, font_size)) \
-            and font_size > MIN_FONT_SIZE:
-        font_size -= 2
-        cr.set_font_size(font_size)
-        x_bearing, y_bearing, t_width, t_height, _, _ = cr.text_extents(text)
+    def __init__(self, args_dict):
+        self.text           = args_dict.get('text')
+        self.filename       = args_dict.get('filename')
+        self.width          = args_dict.get('width')
+        self.height         = args_dict.get('height')
+        self.font           = args_dict.get('font')
+        self.font_size      = None
+        self.bg_color       = args_dict.get('bg_color')
+        self.glow_color     = args_dict.get('glow_color')
+        self.fill_color     = args_dict.get('fill_color')
+        self.stroke_1_color = args_dict.get('stroke_1_color')
+        self.stroke_2_color = args_dict.get('stroke_2_color')
+    
+    
+    def draw(self):
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, self.width, self.height)
+        
+        cr = cairo.Context(surface)
+        
+        self._set_font(cr)
+        self._move_to_center(cr)
+        
+        self._paint_bg(cr)
 
-    x = width / 2 - (t_width / 2 + x_bearing)
-    y = height / 2 - (t_height / 2 + y_bearing)
+        cr.text_path(self.text)
+        self._draw_glow(cr)
+        
+        surface = self._blur(surface, 35)
+        
+        cr = cairo.Context(surface)
+        
+        self._set_font(cr)
+        self._move_to_center(cr)
+        
+        cr.text_path(self.text)
+        self._draw_neon(cr)
+        
+        surface.write_to_png(self.filename)
+    
+    
+    def _set_font(self, cr):
+        cr.select_font_face(self.font, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
 
-    cr.move_to(x, y)
-    cr.text_path(text)
-    return font_size
+        if self.font_size:
+            cr.set_font_size(self.font_size)
+            return
 
-def _draw_border(cr, rgb, line_width):
-    cr.set_source_rgb(*rgb)
-    cr.set_line_width(line_width)
-    cr.stroke_preserve()
+        # Let's find an appropriate font size...
+        f_size = self.MAX_FONT_SIZE
+        
+        while True:
+            cr.set_font_size(f_size)
+            _, _, t_width, t_height, _, _ = cr.text_extents(self.text)
+            
+            # Check if text is within the desired boundaries
+            if not (t_width > self.width - min(self.MAX_PADDING, f_size) or
+                t_height > self.height - min(self.MAX_PADDING, f_size)) \
+                or f_size <= self.MIN_FONT_SIZE:
+                    break
+                    
+            f_size -= 2
+        
+        self.font_size = f_size
 
-def _draw_base(cr, width, height, text, bg_color, shadow_color, fill_color):
-    cr.set_source_rgb(*bg_color)
-    cr.paint()
+    def _move_to_center(self, cr):
+        cr.select_font_face(self.font, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+        cr.set_font_size(self.font_size)
+        x_bearing, y_bearing, t_width, t_height, _, _ = cr.text_extents(self.text)
+        
+        x = self.width / 2 - (t_width / 2 + x_bearing)
+        y = self.height / 2 - (t_height / 2 + y_bearing)
 
-    font_size = _initialize(cr, width, height, text)
+        cr.move_to(x, y)
 
-    _draw_border(cr, shadow_color, max(font_size / 3, MIN_SHADOW))
-    _fill(cr, fill_color)
+    def _paint_bg(self, cr):
+        cr.set_source_rgb(*transform_color(self.bg_color))
+        cr.paint()
+        
+    def _draw_glow(self, cr):
+        stroke_width = max(self.font_size / 3, self.MIN_SHADOW)
+        self._draw_stroke(cr, self.glow_color, stroke_width)
+        self._fill(cr, self.fill_color)
 
-def _draw_text(cr, width, height, text, fg_color_1, fg_color_2, fill_color):
-    font_size = _initialize(cr, width, height, text)
+    def _draw_stroke(self, cr, rgb, stroke_width):
+        cr.set_source_rgb(*transform_color(rgb))
+        cr.set_line_width(stroke_width)
+        cr.stroke_preserve()
+        
+    def _fill(self, cr, rgb):
+        cr.set_source_rgb(*transform_color(rgb))
+        cr.fill()
 
-    _draw_border(cr, fg_color_1, 10 if font_size > 100 else 5)
-    _draw_border(cr, fg_color_2, 5 if font_size > 100 else 2)
-    _fill(cr, fill_color)
+    def _draw_neon(self, cr):
+        self._draw_stroke(cr, self.stroke_1_color, 10 if self.font_size > 100 else 5)
+        self._draw_stroke(cr, self.stroke_2_color, 5 if self.font_size > 100 else 2)
+        self._fill(cr, self.fill_color)
+        
+    def _blur(self, surface, blur_amount):
+        # Load as PIL Image
+        bg_image = Image.frombuffer("RGBA",( surface.get_width(), surface.get_height() ), surface.get_data(), "raw", "RGBA", 0, 1)
+        
+        # Apply blur
+        blurred_image = bg_image.filter(ImageFilter.GaussianBlur(blur_amount))
+        
+        # Restore cairo surface
+        image_bytes = blurred_image.tobytes()
+        image_array = array.array('B', image_bytes)
+        stride = cairo.ImageSurface.format_stride_for_width(cairo.FORMAT_ARGB32, self.width)
+        
+        return surface.create_for_data(image_array, cairo.FORMAT_ARGB32, self.width, self.height, stride)
 
-def _fill(cr, rgb):
-    cr.set_source_rgb(*rgb)
-    cr.fill()
+
 
 def main():
-    width, height = ARGS.width, ARGS.height
-    text, filename = ARGS.text, ARGS.filename
-    bg_color = transform_color(ARGS.background)
-    shadow_color = transform_color(ARGS.shadow)
-    fill_color = transform_color(ARGS.fill)
-    fg1_color = transform_color(ARGS.fg1)
-    fg2_color = transform_color(ARGS.fg2)
+    args = _parse_arguments()
+    neon_text = NeonGlowText(args)
+    neon_text.draw()
 
-    # Draw a background with a blurry light
-    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
-    cr = cairo.Context(surface)
-    _draw_base(cr, width, height, text, bg_color, shadow_color, fill_color)
-    surface.write_to_png(filename)
-
-    original_image = Image.open(filename)
-    blurred_image = original_image.filter(ImageFilter.GaussianBlur(35))
-    blurred_image.save(filename)
-
-    # Draw the text
-    surface = cairo.ImageSurface.create_from_png(filename)
-    cr = cairo.Context(surface)
-    _draw_text(cr, width, height, text, fg1_color, fg2_color, fill_color)
-    surface.write_to_png(filename)
 
 def _parse_arguments():
     parser = argparse.ArgumentParser(
@@ -106,24 +160,28 @@ def _parse_arguments():
                         help='Image height in pixels',
                         type=int,
                         default=1080)
-    parser.add_argument('--background',
-                        help='Image background color in hex (e.g. FF2200)',
-                        default=BG_COLOR)
-    parser.add_argument('--shadow',
-                        help='Text shadow color in hex (e.g. FF2200)',
-                        default=SHADOW_COLOR)
-    parser.add_argument('--fill',
-                        help='Text fill color in hex (e.g. FF2200)',
-                        default=FILL_COLOR)
-    parser.add_argument('--fg1',
-                        help='Text border color 1 in hex (e.g. FF2200)',
-                        default=FG_COLOR_1)
-    parser.add_argument('--fg2',
-                        help='Text border color 2 in hex (e.g. FF2200)',
-                        default=FG_COLOR_2)
+    
+    parser.add_argument('--font',
+                        help='Font name',
+                        default=NeonGlowText.FONT)
+    
+    parser.add_argument('-bc', '--bg-color',
+                        help='Image background color in hex (e.g. 020202)',
+                        default=NeonGlowText.BG_COLOR)
+    parser.add_argument('-gc', '--glow-color',
+                        help='Text glow color in hex (e.g. EC0E77)',
+                        default=NeonGlowText.GLOW_COLOR)
+    parser.add_argument('-fc', '--fill-color',
+                        help='Text fill color in hex (e.g. FFFFFF)',
+                        default=NeonGlowText.FILL_COLOR)
+    parser.add_argument('-s1c', '--stroke-1-color',
+                        help='Text stroke 1 color in hex (e.g. FF31F4)',
+                        default=NeonGlowText.FG_COLOR_1)
+    parser.add_argument('-s2c', '--stroke-2-color',
+                        help='Text stroke 2 color in hex (e.g. FFD796)',
+                        default=NeonGlowText.FG_COLOR_2)
 
-    return parser.parse_args()
+    return vars(parser.parse_args())
 
 if __name__ == '__main__':
-    ARGS = _parse_arguments()
     main()
